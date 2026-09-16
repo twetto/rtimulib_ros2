@@ -16,20 +16,41 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
+#  This package needs a PATCHED RTIMULib, carried as a submodule at
+#  third_party/RTIMULib. Stock upstream builds and runs, but silently degrades:
+#  without the block-read patch the per-sample I2C cost exceeds the 119 Hz
+#  budget and the node publishes about 92 Hz instead of 117.5, and without the
+#  correction switches the raw mode this package depends on does not exist, so
+#  the gyro arrives with its bias already removed and any noise characterisation
+#  measured from it is wrong. Neither failure announces itself.
 set(RTIMULIB_SOURCE_DIR
   "$ENV{RTIMULIB_SOURCE_DIR}"
   CACHE PATH "Path to the RTIMULib/RTIMULib source directory")
 
 if(NOT RTIMULIB_SOURCE_DIR)
-  get_filename_component(RTIMULIB_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/../RTIMULib/RTIMULib"
-    ABSOLUTE)
+  set(_rtimulib_submodule "${CMAKE_CURRENT_SOURCE_DIR}/third_party/RTIMULib/RTIMULib")
+  set(_rtimulib_sibling "${CMAKE_CURRENT_SOURCE_DIR}/../RTIMULib/RTIMULib")
+  if(EXISTS "${_rtimulib_submodule}/RTIMULib.h")
+    get_filename_component(RTIMULIB_SOURCE_DIR "${_rtimulib_submodule}" ABSOLUTE)
+  elseif(EXISTS "${_rtimulib_sibling}/RTIMULib.h")
+    get_filename_component(RTIMULIB_SOURCE_DIR "${_rtimulib_sibling}" ABSOLUTE)
+    message(WARNING
+      "Using the sibling RTIMULib checkout at ${RTIMULIB_SOURCE_DIR}. "
+      "That tree is not version-pinned by this package and may lack the "
+      "required patches. Prefer the submodule: git submodule update --init")
+  endif()
 endif()
 
 if(NOT EXISTS "${RTIMULIB_SOURCE_DIR}/RTIMULib.h")
   message(FATAL_ERROR
-    "RTIMULib.h not found. Set RTIMULIB_SOURCE_DIR to the RTIMULib/RTIMULib source directory.")
+    "RTIMULib not found.\n"
+    "  This package carries it as a submodule. Fetch it with:\n"
+    "      git submodule update --init --recursive\n"
+    "  Or point RTIMULIB_SOURCE_DIR at a RTIMULib/RTIMULib source directory "
+    "that has the lsm9ds1-block-reads patches applied.")
 endif()
+
+message(STATUS "RTIMULib source: ${RTIMULIB_SOURCE_DIR}")
 
 add_subdirectory("${RTIMULIB_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/rtimulib")
 

@@ -2,6 +2,27 @@
 
 ROS 2 Humble node for the Raspberry Pi Sense HAT IMU through RTIMULib.
 
+## Requires a patched RTIMULib
+
+Carried as a submodule at `third_party/RTIMULib`, pinned to the
+`lsm9ds1-block-reads` branch of the fork. Clone with submodules, or fetch after:
+
+```bash
+git submodule update --init --recursive
+```
+
+Stock upstream RTIMULib compiles and runs, but degrades silently in two ways
+that nothing announces:
+
+- Without the block-read patch, one sample costs 8.39 ms of I2C against an
+  8.40 ms budget at the 119 Hz ODR, so roughly a fifth of samples are dropped
+  and the node publishes about 92 Hz instead of 117.5.
+- Without the correction switches, `gyro_bias_correction:=false` has no effect,
+  so the gyro arrives with its bias already removed by a 101-second software
+  high-pass. Any noise characterisation measured from that stream is wrong at
+  long tau, and a VIO estimator is handed a stream whose bias has been partly
+  taken out from under it.
+
 Build from the Ubuntu 22.04 distrobox:
 
 ```bash

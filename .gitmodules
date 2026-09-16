@@ -1,0 +1,4 @@
+[submodule "third_party/RTIMULib"]
+	path = third_party/RTIMULib
+	url = git@github.com:twetto/RTIMULib.git
+	branch = lsm9ds1-block-reads
