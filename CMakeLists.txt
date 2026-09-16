@@ -28,26 +28,22 @@ set(RTIMULIB_SOURCE_DIR
   CACHE PATH "Path to the RTIMULib/RTIMULib source directory")
 
 if(NOT RTIMULIB_SOURCE_DIR)
-  set(_rtimulib_submodule "${CMAKE_CURRENT_SOURCE_DIR}/third_party/RTIMULib/RTIMULib")
-  set(_rtimulib_sibling "${CMAKE_CURRENT_SOURCE_DIR}/../RTIMULib/RTIMULib")
-  if(EXISTS "${_rtimulib_submodule}/RTIMULib.h")
-    get_filename_component(RTIMULIB_SOURCE_DIR "${_rtimulib_submodule}" ABSOLUTE)
-  elseif(EXISTS "${_rtimulib_sibling}/RTIMULib.h")
-    get_filename_component(RTIMULIB_SOURCE_DIR "${_rtimulib_sibling}" ABSOLUTE)
-    message(WARNING
-      "Using the sibling RTIMULib checkout at ${RTIMULIB_SOURCE_DIR}. "
-      "That tree is not version-pinned by this package and may lack the "
-      "required patches. Prefer the submodule: git submodule update --init")
-  endif()
+  #  Submodule only. There is deliberately no fallback to a sibling checkout:
+  #  an unpinned tree next to this one is indistinguishable from the pinned one
+  #  at build time, so a stale or unpatched copy would be picked up silently -
+  #  exactly the failure this submodule exists to prevent.
+  get_filename_component(RTIMULIB_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/RTIMULib/RTIMULib" ABSOLUTE)
 endif()
 
 if(NOT EXISTS "${RTIMULIB_SOURCE_DIR}/RTIMULib.h")
   message(FATAL_ERROR
-    "RTIMULib not found.\n"
-    "  This package carries it as a submodule. Fetch it with:\n"
+    "RTIMULib not found at ${RTIMULIB_SOURCE_DIR}\n"
+    "  This package carries a patched RTIMULib as a submodule. Fetch it with:\n"
     "      git submodule update --init --recursive\n"
-    "  Or point RTIMULIB_SOURCE_DIR at a RTIMULib/RTIMULib source directory "
-    "that has the lsm9ds1-block-reads patches applied.")
+    "  Stock upstream RTIMULib will build but degrades silently: about 92 Hz\n"
+    "  instead of 117.5, and gyro_bias_correction has no effect.\n"
+    "  To use a tree elsewhere, set RTIMULIB_SOURCE_DIR explicitly.")
 endif()
 
 message(STATUS "RTIMULib source: ${RTIMULIB_SOURCE_DIR}")

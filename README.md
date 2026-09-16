@@ -11,6 +11,15 @@ Carried as a submodule at `third_party/RTIMULib`, pinned to the
 git submodule update --init --recursive
 ```
 
+This is the only place RTIMULib comes from. There is deliberately no fallback to
+a checkout sitting next to this package: at build time an unpinned tree looks
+identical to the pinned one, so a stale or unpatched copy would be used silently.
+To build against a tree elsewhere, set `RTIMULIB_SOURCE_DIR` explicitly, which is
+visible in the build output.
+
+To edit RTIMULib itself, work inside `third_party/RTIMULib`, push to the fork,
+then bump the pin here with `git add third_party/RTIMULib`.
+
 Stock upstream RTIMULib compiles and runs, but degrades silently in two ways
 that nothing announces:
 
