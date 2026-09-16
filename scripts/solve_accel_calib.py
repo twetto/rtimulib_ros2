@@ -61,7 +61,22 @@ def main():
     bias, scale = p[:3], p[3:]
     r = residuals(p, A)
 
-    print(f"poses: {n}   unknowns: 6")
+    rss = float(np.sum(r**2))
+    dof = n - 6
+    print(f"poses: {n}   unknowns: 6   degrees of freedom: {dof}")
+    if dof > 0:
+        sigma = math.sqrt(rss/dof)
+        J = jac(p, A)
+        try:
+            cov = sigma**2 * np.linalg.inv(J.T @ J)
+            se = np.sqrt(np.diag(cov))
+        except np.linalg.LinAlgError:
+            se = np.full(6, float("nan"))
+        print(f"  residual RMS: {sigma*1000:.2f} mm/s2   "
+              f"max |residual|: {np.abs(r).max()*1000:.2f} mm/s2")
+        print(f"  (this IS meaningful now: the fit is over-determined)\n")
+    else:
+        se = np.full(6, float("nan"))
     if n <= 6:
         print("NOTE: exactly determined, so the fit is forced through every point.")
         print("      The residuals below are therefore ~0 by construction and say")
@@ -69,8 +84,9 @@ def main():
 
     print("per-axis result:")
     for i, ax in enumerate("xyz"):
-        print(f"  {ax}:  scale {scale[i]:.4f}  ({100*(scale[i]-1):+.2f} %)"
-              f"   bias {bias[i]:+.4f} m/s2")
+        ss, sb = se[3+i], se[i]
+        print(f"  {ax}:  scale {scale[i]:.4f} +/- {ss:.4f}  ({100*(scale[i]-1):+.2f} %)"
+              f"   bias {bias[i]:+.4f} +/- {sb:.4f} m/s2")
 
     # Independent cross-check from opposed pose pairs, valid only where a pose is
     # nearly axis-aligned. Agreement with the fit is real evidence; the residual
@@ -111,11 +127,13 @@ def main():
         print(f"  bias:  [{bias[0]:+.6f}, {bias[1]:+.6f}, {bias[2]:+.6f}]")
         print(f"  scale: [{scale[0]:.6f}, {scale[1]:.6f}, {scale[2]:.6f}]")
 
-    print("\nverification, corrected magnitude per pose:")
-    for i, v in enumerate(A):
-        c = (v - bias) / scale
-        print(f"  pose {i}: |a| {np.linalg.norm(v):7.3f} -> {np.linalg.norm(c):7.4f}"
-              f"   (g = {G})")
+    print("\nper-pose check (corrected magnitude should sit on g):")
+    worst = sorted(range(n), key=lambda i: -abs(r[i]))[:5]
+    for i in range(n):
+        c = (A[i] - bias) / scale
+        mark = "  <-- worst" if i in worst[:2] else ""
+        print(f"  pose {i:>2}: |a| {np.linalg.norm(A[i]):7.3f} -> {np.linalg.norm(c):7.4f}"
+              f"   resid {r[i]*1000:+7.2f} mm/s2{mark}")
 
 
 if __name__ == "__main__":

@@ -45,13 +45,19 @@ def generate_launch_description():
                     LaunchConfiguration("trigger_pulse_us"), value_type=int),
                 "trigger_active_low": False,
                 "trigger_frame_id": "camera",
-                # Per-axis accel scale from scripts/solve_accel_calib.py, six
-                # static poses, 2026-09-16. Bias is deliberately left at zero:
-                # the VIO estimator models it online, and the measured values
-                # (-0.034, -0.135, +0.289) would go stale with temperature.
-                # Consequence: |a| at rest still reads about 9.52, not 9.807,
-                # because the bias is still present. That is intended.
-                "accel_scale": [0.995780, 0.991649, 0.993818],
+                # Per-axis accel scale from scripts/solve_accel_calib.py,
+                # 13 static poses, 2026-09-16. Over-determined by 7, residual
+                # RMS 17 mm/s2, so these carry real uncertainties:
+                #   x 0.995203 +/- 0.0013   y 0.991276 +/- 0.0010
+                #   z 0.993534 +/- 0.0008
+                # An earlier 6-pose fit gave 0.995780/0.991649/0.993818, which
+                # agrees to within 0.06% - inside the error bars.
+                #
+                # Bias is deliberately left at zero. The VIO estimator models it
+                # online, and the measured values (-0.028, -0.129, +0.297) would
+                # go stale as the part warms. Consequence: |a| at rest reads
+                # about 9.51, not 9.807, because the bias is still present.
+                "accel_scale": [0.995203, 0.991276, 0.993534],
                 "accel_bias": [0.0, 0.0, 0.0],
             }],
         ),
