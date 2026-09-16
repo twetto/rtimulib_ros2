@@ -45,20 +45,24 @@ def generate_launch_description():
                     LaunchConfiguration("trigger_pulse_us"), value_type=int),
                 "trigger_active_low": False,
                 "trigger_frame_id": "camera",
-                # Per-axis accel scale from scripts/solve_accel_calib.py,
-                # 13 static poses, 2026-09-16. Over-determined by 7, residual
-                # RMS 17 mm/s2, so these carry real uncertainties:
-                #   x 0.995203 +/- 0.0013   y 0.991276 +/- 0.0010
-                #   z 0.993534 +/- 0.0008
-                # An earlier 6-pose fit gave 0.995780/0.991649/0.993818, which
-                # agrees to within 0.06% - inside the error bars.
+                # Per-axis accel calibration, 13 static poses 2026-09-16,
+                # over-determined by 7, residual RMS 17 mm/s2, solved against
+                # LOCAL gravity: Hsinchu 24.78958 N -> g = 9.7893. Solving
+                # against the standard 9.80665 biases every scale by +0.18%,
+                # which is larger than the residual scale error itself.
                 #
-                # Bias is deliberately left at zero. The VIO estimator models it
-                # online, and the measured values (-0.028, -0.129, +0.297) would
-                # go stale as the part warms. Consequence: |a| at rest reads
-                # about 9.51, not 9.807, because the bias is still present.
-                "accel_scale": [0.995203, 0.991276, 0.993534],
-                "accel_bias": [0.0, 0.0, 0.0],
+                # Cross-checked two ways: a raw 6-pose set and this 13-pose set
+                # captured THROUGH the earlier correction agree on the absolute
+                # scale to 0.058% once composed.
+                #
+                # Bias IS applied here. The earlier reasoning - "the estimator
+                # models bias online, so leave it" - was half right: the
+                # estimator does converge, but it starts from whatever the
+                # driver emits, and +0.297 m/s2 on z is 1.74 deg of initial
+                # gravity tilt. Removing a measured bias gives initialisation a
+                # better starting point; the filter still refines it.
+                "accel_scale": [0.996971, 0.993037, 0.995300],
+                "accel_bias": [-0.027633, -0.128596, 0.296591],
             }],
         ),
     ])
