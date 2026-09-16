@@ -46,9 +46,16 @@ def solve(A):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "accel_poses.json"
-    P = json.load(open(path))["poses"]
+    doc = json.load(open(path))
+    P = doc["poses"]
     A = np.array([p["mean"] for p in P])
     n = len(A)
+
+    # If a correction was live during capture, what we solve here is a residual
+    # on top of it. Compose so the printed result is always absolute.
+    applied_s = np.array(doc.get("applied_scale", [1.0, 1.0, 1.0]))
+    applied_b = np.array(doc.get("applied_bias", [0.0, 0.0, 0.0]))
+    composed = any(abs(v - 1) > 1e-9 for v in applied_s) or any(abs(v) > 1e-9 for v in applied_b)
 
     p = solve(A)
     bias, scale = p[:3], p[3:]
@@ -89,9 +96,20 @@ def main():
     print(f"  per-axis scale spread: {100*spread:.2f} %   "
           f"-> {'non-uniform, so gravity direction is tilted and T_cam_imu is slightly biased' if spread > 0.005 else 'near uniform, so gravity direction is unaffected'}")
 
-    print("\ncorrection to apply:  a_corrected[i] = (a[i] - bias[i]) / scale[i]")
-    print(f"  bias:  [{bias[0]:+.6f}, {bias[1]:+.6f}, {bias[2]:+.6f}]")
-    print(f"  scale: [{scale[0]:.6f}, {scale[1]:.6f}, {scale[2]:.6f}]")
+    if composed:
+        abs_scale = applied_s * scale
+        abs_bias = applied_b + bias * applied_s
+        print(f"\nposes were captured with a correction already active:")
+        print(f"  applied scale {list(np.round(applied_s, 6))}")
+        print(f"  residual now  {list(np.round(scale, 6))}")
+        print("\nABSOLUTE correction to put in the launch file:")
+        print(f"  scale: [{abs_scale[0]:.6f}, {abs_scale[1]:.6f}, {abs_scale[2]:.6f}]")
+        print(f"  bias:  [{abs_bias[0]:+.6f}, {abs_bias[1]:+.6f}, {abs_bias[2]:+.6f}]")
+        print("  (replace the existing values; do not multiply them again)")
+    else:
+        print("\ncorrection to apply:  a_corrected[i] = (a[i] - bias[i]) / scale[i]")
+        print(f"  bias:  [{bias[0]:+.6f}, {bias[1]:+.6f}, {bias[2]:+.6f}]")
+        print(f"  scale: [{scale[0]:.6f}, {scale[1]:.6f}, {scale[2]:.6f}]")
 
     print("\nverification, corrected magnitude per pose:")
     for i, v in enumerate(A):

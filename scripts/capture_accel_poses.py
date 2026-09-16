@@ -19,6 +19,7 @@ Usage:
 import json
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -110,6 +111,29 @@ def coverage(poses):
     return worst, ext
 
 
+def active_correction():
+    """Read the correction the node is already applying.
+
+    Poses captured while a correction is live are already corrected, so solving
+    them yields a RESIDUAL, not an absolute calibration. Recording what was
+    active lets the solver compose the two instead of double-correcting."""
+    got = {}
+    for name in ("accel_scale", "accel_bias"):
+        try:
+            r = subprocess.run(["ros2", "param", "get", "/rtimulib_node", name],
+                               capture_output=True, text=True, timeout=10)
+            txt = r.stdout.strip()
+            nums = [float(x) for x in
+                    txt.replace("[", " ").replace("]", " ").replace(",", " ").split()
+                    if x.replace("-", "").replace(".", "").replace("e", "").isdigit()
+                    or (x.startswith("-") and x[1:].replace(".", "").isdigit())]
+            if len(nums) >= 3:
+                got[name] = nums[-3:]
+        except Exception:
+            pass
+    return got
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "accel_poses.json"
     rclpy.init()
@@ -136,6 +160,17 @@ def main():
         stop.set(); spin.join(timeout=2.0); node.destroy_node(); rclpy.shutdown()
         sys.exit(1)
     print(" ok\n")
+
+    active = active_correction()
+    sc = active.get("accel_scale", [1.0, 1.0, 1.0])
+    bs = active.get("accel_bias", [0.0, 0.0, 0.0])
+    if any(abs(v - 1.0) > 1e-9 for v in sc) or any(abs(v) > 1e-9 for v in bs):
+        print(f"\nNOTE: the node is already applying a correction:")
+        print(f"  scale {sc}")
+        print(f"  bias  {bs}")
+        print("  These poses will therefore be ALREADY CORRECTED. The values are")
+        print("  recorded in the output and the solver composes them, so the")
+        print("  result it prints is the absolute calibration, not a residual.\n")
 
     print(__doc__)
     print(f"writing to {os.path.abspath(out)}\n")
@@ -187,7 +222,8 @@ def main():
                   f"z {ext[2][1]-ext[2][0]:.2f}")
 
         with open(out, "w") as f:
-            json.dump({"poses": poses}, f, indent=2)
+            json.dump({"poses": poses, "applied_scale": sc, "applied_bias": bs},
+                      f, indent=2)
 
     stop.set()
     spin.join(timeout=2.0)
