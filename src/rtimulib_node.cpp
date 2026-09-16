@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <RTIMULib.h>
 
@@ -24,7 +26,8 @@ constexpr double MICROTESLA_TO_TESLA = 1.0e-6;
 constexpr double HPA_TO_PA = 100.0;
 
 sensor_msgs::msg::Imu toImuMessage(
-  const RTIMU_DATA & data, const std::string & frame_id, const rclcpp::Time & stamp)
+  const RTIMU_DATA & data, const std::string & frame_id, const rclcpp::Time & stamp,
+  const std::array<double, 3> & accel_scale, const std::array<double, 3> & accel_bias)
 {
   sensor_msgs::msg::Imu msg;
   msg.header.stamp = stamp;
@@ -52,9 +55,16 @@ sensor_msgs::msg::Imu toImuMessage(
   //  invalidate the existing T_cam_imu, so z is the one to negate.
   //
   //  Consequence: linear_acceleration.z reads about -9.4 at rest, not +9.4.
-  msg.linear_acceleration.x = -data.accel.x() * G_TO_MPSS;
-  msg.linear_acceleration.y = -data.accel.y() * G_TO_MPSS;
-  msg.linear_acceleration.z = -data.accel.z() * G_TO_MPSS;
+  //  Scale correction is applied here but bias deliberately is not, by default.
+  //  A VIO estimator models accelerometer bias online and will absorb it, and a
+  //  baked-in one-off measurement would only go stale as the part warms. Scale
+  //  is the term the estimator cannot recover, so it belongs in the driver.
+  msg.linear_acceleration.x =
+    (-data.accel.x() * G_TO_MPSS - accel_bias[0]) / accel_scale[0];
+  msg.linear_acceleration.y =
+    (-data.accel.y() * G_TO_MPSS - accel_bias[1]) / accel_scale[1];
+  msg.linear_acceleration.z =
+    (-data.accel.z() * G_TO_MPSS - accel_bias[2]) / accel_scale[2];
 
   return msg;
 }
@@ -104,6 +114,22 @@ public:
     //  measure. Set these true only for attitude display.
     const auto gyro_bias_correction = declare_parameter<bool>("gyro_bias_correction", false);
     const auto accel_calibration = declare_parameter<bool>("accel_calibration", false);
+    //  Per-axis accelerometer correction from scripts/solve_accel_calib.py.
+    //  Defaults are identity so an uncalibrated rig behaves as before.
+    const auto scale_v = declare_parameter<std::vector<double>>(
+      "accel_scale", {1.0, 1.0, 1.0});
+    const auto bias_v = declare_parameter<std::vector<double>>(
+      "accel_bias", {0.0, 0.0, 0.0});
+    if (scale_v.size() != 3 || bias_v.size() != 3) {
+      throw std::runtime_error("accel_scale and accel_bias must each have 3 elements");
+    }
+    for (size_t i = 0; i < 3; i++) {
+      if (scale_v[i] <= 0.0) {
+        throw std::runtime_error("accel_scale entries must be positive");
+      }
+      accel_scale_[i] = scale_v[i];
+      accel_bias_[i] = bias_v[i];
+    }
     const auto slerp_power = declare_parameter<double>("slerp_power", 0.02);
     const auto idle_sleep_ms = declare_parameter<int>("idle_sleep_ms", 1);
 
@@ -183,6 +209,10 @@ public:
       get_logger(), "RTIMULib node started with %s | gyro_bias_correction=%s accel_calibration=%s",
       imu_->IMUName(), gyro_bias_correction ? "ON" : "off (raw)",
       accel_calibration ? "ON" : "off (raw)");
+    RCLCPP_INFO(
+      get_logger(), "accel_scale [%.6f %.6f %.6f]  accel_bias [%+.4f %+.4f %+.4f]",
+      accel_scale_[0], accel_scale_[1], accel_scale_[2],
+      accel_bias_[0], accel_bias_[1], accel_bias_[2]);
     if (!gyro_bias_correction) {
       RCLCPP_INFO(
         get_logger(),
@@ -215,7 +245,7 @@ private:
       }
 
       if (data.fusionQPoseValid && data.gyroValid && data.accelValid) {
-        imu_pub_->publish(toImuMessage(data, frame_id_, stamp));
+        imu_pub_->publish(toImuMessage(data, frame_id_, stamp, accel_scale_, accel_bias_));
 
         //  Tie triggering to published IMU samples so the divisor means what it
         //  says. At the 119Hz ODR a divisor of 4 gives roughly 29.4Hz frames.
@@ -273,6 +303,8 @@ private:
   rclcpp::Publisher<rtimulib_ros2::msg::CameraTrigger>::SharedPtr trigger_pub_;
   std::unique_ptr<GpioTrigger> trigger_;
   std::string frame_id_;
+  std::array<double, 3> accel_scale_{1.0, 1.0, 1.0};
+  std::array<double, 3> accel_bias_{0.0, 0.0, 0.0};
   std::string trigger_frame_id_;
   int trigger_divisor_{4};
   int trigger_pulse_us_{1000};
